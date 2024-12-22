@@ -1,0 +1,32 @@
+{
+  "name": "cellularena",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "scripts": {
+    "watch": "webpack --watch",
+    "build": "webpack",
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/artisb45/CodingameSpring2021.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GPL",
+  "bugs": {
+    "url": "https://github.com/artisb45/CodingameSpring2021/issues"
+  },
+  "homepage": "https://github.com/artisb45/CodingameSpring2021#readme",
+  "devDependencies": {
+    "copy-webpack-plugin": "^11.0.0",
+    "jest": "^29.7.0",
+    "webpack": "^5.36.2",
+    "webpack-cli": "^4.7.0"
+  },
+  "dependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0"
+  }
+}
