@@ -9,11 +9,16 @@ export default class State {
   }
 
   reset() {
+    this.map = this.createEmptyMap(this.width, this.height);
+
     this.walls = [];
-    this.players = [[], []];
+    this.players = [];
+    this.stocks = [];
     this.proteins = [];
-    this.stock = new Stock();
+
     this.requiredActions = 0;
+    this.children = [];
+    this.descendance = [];
   }
 
   setDimensions(width, height) {
@@ -22,13 +27,16 @@ export default class State {
   }
 
   setCell(x, y, type, owner, id, direction, parent, root) {
+    this.map[y][x] = { x, y, type, owner, id, direction, parent, root };
+
     if (type === "WALL") {
       this.walls.push({ x, y });
       return;
     }
 
     if (TYPE.ORGANS.has(type)) {
-      this.players[owner].push({ x, y, id, type, direction, root });
+      (this.players[owner] ??= []).push({ x, y, id, type, direction, root, parent });
+      (this.children[parent] ??= []).push(id);
       return;
     }
 
@@ -39,21 +47,19 @@ export default class State {
   }
 
   setStock(player, a, b, c, d) {
-    this.stock[player] = new Stock(a, b, c, d);
+    this.stocks[player] = new Stock(a, b, c, d);
   }
 
-  getStock(player = 1) {
-    return this.stock[player];
+  isCellInBounds(x, y) {
+    return y >= 0 && y < this.height && x >= 0 && x < this.width;
   }
 
   isCellFree(x, y) {
     return (
-      x >= 0 &&
-      x < this.width &&
-      y >= 0 &&
-      y < this.height &&
-      !this.walls.some((p) => p.x === x && p.y === y) &&
-      !this.players.flat().some((p) => p.x === x && p.y === y)
+      this.isCellInBounds(x, y) &&
+      this.map[y][x].type !== "WALL" &&
+      this.map[y][x].owner !== 0 &&
+      this.map[y][x].owner !== 1
     );
   }
 
@@ -62,7 +68,17 @@ export default class State {
   }
 
   isCellEnnemy(x, y) {
-    return this.players[0].find((p) => p.x === x && p.y === y);
+    return this.isCellInBounds(x, y) && this.map[y][x] && this.map[y][x].owner === 0;
+  }
+
+  // Getters
+
+  getStock(player = 1) {
+    return this.stocks[player];
+  }
+
+  getType(x, y) {
+    return this.map[y][x].type;
   }
 
   getSporerRange(sporer) {
@@ -87,32 +103,6 @@ export default class State {
     return reachableCells;
   }
 
-  getAdjacentCells(x, y) {
-    return DIRECTIONS.map(([dx, dy, direction]) => ({ x: x + dx, y: y + dy, direction }));
-  }
-
-  getCloseFreeCells(x, y) {
-    return this.getAdjacentCells(x, y).filter(({ x, y }) => this.isCellFree(x, y));
-  }
-
-  getAdjacentProteins(x, y) {
-    return this.getAdjacentCells(x, y)
-      .map(({ x: nx, y: ny, direction }) => {
-        const protein = this.isCellProtein(nx, ny);
-        return protein ? { x: nx, y: ny, direction, type: protein.type } : null;
-      })
-      .filter(Boolean); // Supprime les entrées null
-  }
-
-  getAdjacentEnnemy(x, y) {
-    return this.getAdjacentCells(x, y)
-      .map(({ x: nx, y: ny, direction }) => {
-        const ennemy = this.isCellEnnemy(nx, ny);
-        return ennemy ? { x: nx, y: ny, direction } : null;
-      })
-      .filter(Boolean); // Supprime les entrées null
-  }
-
   getOrganisms(player) {
     const organs = this.players[player];
 
@@ -124,5 +114,74 @@ export default class State {
     );
 
     return groupedByRoot;
+  }
+
+  getAdjacentCells(x, y) {
+    return DIRECTIONS.map(([dx, dy, direction]) => ({ x: x + dx, y: y + dy, direction }));
+  }
+
+  getAdjacentFreeCells(x, y) {
+    return this.getAdjacentCells(x, y).filter(({ x, y }) => this.isCellFree(x, y));
+  }
+
+  getAdjacentProteins(x, y) {
+    return this.getAdjacentCells(x, y)
+      .map(({ x: nx, y: ny, direction }) => {
+        const protein = this.isCellProtein(nx, ny);
+        return protein ? { ...this.map[ny][nx], direction } : null;
+      })
+      .filter(Boolean); // Supprime les entrées null
+  }
+
+  getAdjacentEnnemies(x, y) {
+    return this.getAdjacentCells(x, y)
+      .map(({ x: nx, y: ny, direction }) => {
+        const ennemy = this.isCellEnnemy(nx, ny);
+        return ennemy ? { ...this.map[ny][nx], direction } : null;
+      })
+      .filter(Boolean); // Supprime les entrées null
+  }
+
+  createEmptyMap(width, height) {
+    return Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => ({ type: null }))
+    );
+  }
+
+  /**
+   * Calculate the total number of descendants for each cell.
+   */
+  calculateDescendance() {
+    const descendantCounts = {};
+
+    // Recursive DFS with memoization
+    const countDescendants = (id) => {
+      if (descendantCounts[id] !== undefined) {
+        return descendantCounts[id];
+      }
+
+      // Base case: if no children, return 0
+      if (!this.children[id] || this.children[id].length === 0) {
+        descendantCounts[id] = 0;
+        return 0;
+      }
+
+      // Count direct children + their descendants
+      let total = 0;
+      for (const childId of this.children[id]) {
+        total += 1 + countDescendants(childId);
+      }
+
+      descendantCounts[id] = total;
+      return total;
+    };
+
+    // Iterate over all parents in the children map
+    for (const id of Object.keys(this.children)) {
+      countDescendants(id);
+    }
+
+    this.descendance = descendantCounts;
+    return descendantCounts;
   }
 }

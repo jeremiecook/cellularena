@@ -1,7 +1,8 @@
 import { DIRECTIONS } from "../constants";
 import State from "../models/State";
-import IO from "./IO";
-import ReachableCells from "./ReachableCells";
+import IO from "../utilities/IO";
+import Timer from "../utilities/Timer";
+import BFS from "./BFS";
 
 export default class AI {
   /**
@@ -10,40 +11,42 @@ export default class AI {
   constructor() {
     this.state = null;
     this.sporersDone = [];
-    this.rc = null;
+    this.bfs = null;
   }
 
+  /**
+   * Find next move
+   * @param {State} state - Current game state
+   */
   next(state) {
-    const io = new IO();
+    this.timer = new Timer();
     this.state = state;
-    this.rc = new ReachableCells(state);
+    const io = new IO();
+
+    this.bfs = new BFS(state);
+    this.state.calculateDescendance();
+
     this.reservedCells = new Set();
     this.stock = this.state.getStock(1);
 
     // Pour chaque organisme (séquence d'organes)
     const organisms = this.state.getOrganisms(1);
 
-    for (let organism of organisms) {
-      IO.log("Organism: ", organism);
+    for (let [index, organism] of organisms.entries()) {
+      IO.log("Organism: ", index);
       const expansionMoves = this.getExpansionMoves(organism);
 
+      // Pas de coup disponible
       if (!expansionMoves.length) {
         io.wait();
         continue;
       }
 
       // Defense
-      const bestDefenseAction = this.getBestDefenseAction(expansionMoves);
-      if (bestDefenseAction) {
-        const type = this.stock.hasStockFor("TENTACLE") ? "TENTACLE" : "BASIC";
-        this.stock.spend(type);
-        io.grow(
-          type,
-          bestDefenseAction.from,
-          bestDefenseAction.x,
-          bestDefenseAction.y,
-          bestDefenseAction.direction
-        );
+      const defend = this.getBestDefenseAction(expansionMoves);
+      if (defend) {
+        this.stock.spend(defend.type);
+        io.grow(defend.type, defend.from, defend.x, defend.y, defend.direction);
         continue;
       }
 
@@ -57,14 +60,11 @@ export default class AI {
       }
 
       // Harvester
-      if (this.stock.hasStockFor("HARVESTER")) {
-        const harvesterMoves = this.getHarvesterMoves(expansionMoves);
-        if (harvesterMoves.length) {
-          const move = harvesterMoves[0];
-          this.stock.spend("HARVESTER");
-          io.grow("HARVESTER", move.from, move.x, move.y, move.direction);
-          continue;
-        }
+      const harvest = this.getBestHarvesterAction(expansionMoves);
+      if (harvest) {
+        this.stock.spend("HARVESTER");
+        io.grow("HARVESTER", harvest.from, harvest.x, harvest.y, harvest.direction);
+        continue;
       }
 
       // Sporer
@@ -76,45 +76,65 @@ export default class AI {
         continue;
       }
 
-      // Organe basique
-      if (this.stock.hasStockFor("BASIC")) {
-        IO.log("BASIC");
-        IO.log(this.stock.getStock());
-        const basicMoves = this.getBasicMoves(expansionMoves);
-        const move = basicMoves[0];
-        //if (move.score > 0) {
-        this.stock.spend("BASIC");
-        io.grow("BASIC", move.from, move.x, move.y, move.direction);
+      // Expand
+      const expand = this.getBestExpandMove(expansionMoves);
+      if (expand) {
+        IO.log("Expand: ", expand);
+        this.stock.spend(expand.type);
+        io.grow(expand.type, expand.from, expand.x, expand.y, expand.direction);
         continue;
-        //}
       }
 
-      // Organe de ce qu'on trouve
-      const bestType = this.getBestTypeConsideringStock();
-      const basicMoves = this.getBasicMoves(expansionMoves);
-
-      const scoredMoves = basicMoves.map((move) => ({
-        ...move,
-        score: this.rc.simulate(move), // Add the score to each move
-      }));
-
-      const orderedMoves = scoredMoves.sort((a, b) => b.score - a.score);
-      const move = orderedMoves[0];
-      this.stock.spend(bestType);
-      io.grow(bestType, move.from, move.x, move.y, move.direction);
+      io.wait();
     }
   }
 
-  getBestDefenseAction(moves) {
+  getBestExpandMove(availableMoves) {
+    const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
+
+    let moves = availableMoves
+      .map((move) => ({ ...move, score: this.bfs.simulate(move) }))
+      .sort((a, b) => b.score - a.score);
+
+    //IO.log("AM: ", moves);
+    if (moves[0].score <= 0) return false;
+
+    moves[0].type = type;
+    return moves[0];
+  }
+
+  getBestDefenseAction(availableMoves) {
     const ennemyMoves = [];
-    for (let move of moves) {
-      const ennemies = this.state.getAdjacentEnnemy(move.x, move.y);
+
+    // Meilleur type d'organe pour se défendre
+    const type = this.stock.hasStockFor("TENTACLE")
+      ? "TENTACLE"
+      : this.getBestTypeConsideringStock();
+
+    // Ennemis proches
+    for (let move of availableMoves) {
+      const ennemies = this.state.getAdjacentEnnemies(move.x, move.y);
       for (let ennemy of ennemies) {
-        ennemyMoves.push({ ...move, direction: ennemy.direction });
+        const childrenCount = this.state.descendance[ennemy.id];
+        ennemyMoves.push({ ...move, type, direction: ennemy.direction, score: childrenCount });
       }
     }
 
-    return ennemyMoves[0];
+    //IO.log("ennemyMoves: ", ennemyMoves);
+
+    if (ennemyMoves.length) {
+      const ordered = ennemyMoves.sort((a, b) => b.score - a.score);
+      //IO.log("ennemyMoves ordered: ", ordered);
+      return ordered[0];
+    }
+
+    return false;
+
+    // Ennemis à distance 2
+    // const ennemyAvailableMoves = this.getExpansionMoves(this.players[0]);
+
+    // const start = [];
+    // for (let i = 0; i < 2; i++) {}
   }
 
   getBestRootAction(organism) {
@@ -134,7 +154,7 @@ export default class AI {
 
     const scoredMoves = targets.map((move) => ({
       ...move,
-      score: this.rc.simulate(move), // Add the score to each move
+      score: this.bfs.simulate(move), // Add the score to each move
     }));
     const orderedMoves = scoredMoves.sort((a, b) => b.score - a.score);
 
@@ -142,9 +162,13 @@ export default class AI {
     return orderedMoves[0];
   }
 
-  getHarvesterMoves(moves) {
+  getBestHarvesterAction(availableMoves) {
+    if (!this.stock.hasStockFor("HARVESTER")) return false;
+
+    //IO.log("available: ", availableMoves);
+
     const harvesterMoves = [];
-    for (let move of moves) {
+    for (let move of availableMoves) {
       const isProtein = this.state.isCellProtein(move.x, move.y);
       let score = isProtein ? 1 : 2;
       const closeProteins = this.state.getAdjacentProteins(move.x, move.y);
@@ -154,19 +178,20 @@ export default class AI {
     }
     const orderedMoves = harvesterMoves.sort((a, b) => b.score - a.score);
     //console.error("Ordered: ", orderedMoves);
-    return orderedMoves;
+    //IO.log("ordered: ", orderedMoves);
+    return orderedMoves[0];
   }
 
   getBasicMoves(moves) {
     const basicMoves = [];
     for (let move of moves) {
-      let score = this.rc.simulate(move);
+      let score = this.bfs.simulate(move);
       const isProtein = this.state.isCellProtein(move.x, move.y);
       if (isProtein) score -= 3;
       basicMoves.push({ ...move, score });
     }
     const orderedMoves = basicMoves.sort((a, b) => b.score - a.score);
-    //console.error("Ordered: ", orderedMoves);
+    IO.log("Ordered: ", orderedMoves);
     return orderedMoves;
   }
 
@@ -191,7 +216,7 @@ export default class AI {
     const moves = [];
 
     for (const organ of organism) {
-      const cells = this.state.getCloseFreeCells(organ.x, organ.y);
+      const cells = this.state.getAdjacentFreeCells(organ.x, organ.y);
       cells.forEach((cell) => moves.push({ from: organ.id, ...cell }));
     }
 

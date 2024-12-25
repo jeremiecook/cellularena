@@ -1,7 +1,7 @@
 // TODO
 
 import State from "./models/State";
-import IO from "./components/IO";
+import IO from "./utilities/IO";
 import AI from "./components/AI";
 
 const state = new State();
