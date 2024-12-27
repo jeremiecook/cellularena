@@ -93,8 +93,9 @@ export default class BFS {
       grid.flat().reduce((sum, cell) => sum + (cell !== Infinity ? cell : 0), 0);
 
     // Retourne la différence entre les deux sommes
-    IO.log("Player: ", sumGrid(newGrid), sumGrid(this.players[1]));
+    //IO.log("Player: ", sumGrid(newGrid), sumGrid(this.players[1]));
     //return sumGrid(this.players[0]) - sumGrid(newGrid);
+    //this.displayGrid(this.#calculateDifference(this.players[1], newGrid));
     return sumGrid(this.players[1]) - sumGrid(newGrid);
   }
 

@@ -1,5 +1,7 @@
 import { TYPE, DIRECTIONS } from "../constants";
+import Cell from "./Cell";
 import Stock from "./Stock";
+import IO from "../utilities/IO";
 
 export default class State {
   constructor() {
@@ -10,6 +12,7 @@ export default class State {
 
   reset() {
     this.map = this.createEmptyMap(this.width, this.height);
+    this.control = this.createEmptyMap(this.width, this.height);
 
     this.walls = [];
     this.players = [];
@@ -27,20 +30,38 @@ export default class State {
   }
 
   setCell(x, y, type, owner, id, direction, parent, root) {
-    this.map[y][x] = { x, y, type, owner, id, direction, parent, root };
+    const cell = new Cell({ x, y, type, owner, id, direction, parent, root });
+    this.map[y][x] = cell;
 
     if (type === "WALL") {
-      this.walls.push({ x, y });
+      this.walls.push(cell);
       return;
     }
 
-    if (TYPE.ORGANS.has(type)) {
-      (this.players[owner] ??= []).push({ x, y, id, type, direction, root, parent });
+    if (cell.isOrgan()) {
+      (this.players[owner] ??= []).push(cell);
       (this.children[parent] ??= []).push(id);
+
+      // Cellules controlées par un joueur
+      if (type === "TENTACLE") {
+        const directions = {
+          E: [1, 0],
+          W: [-1, 0],
+          N: [0, -1],
+          S: [0, 1],
+        };
+        const nx = x + directions[direction][0];
+        const ny = y + directions[direction][1];
+
+        if (this.isCellInBounds(nx, ny)) {
+          this.map[ny][nx] = new Cell({ x: nx, y: ny, controlledBy: owner });
+        }
+      }
+
       return;
     }
 
-    if (TYPE.PROTEINS.has(type)) {
+    if (cell.isProtein()) {
       this.proteins.push({ x, y, type });
       return;
     }
@@ -55,12 +76,11 @@ export default class State {
   }
 
   isCellFree(x, y) {
-    return (
-      this.isCellInBounds(x, y) &&
-      this.map[y][x].type !== "WALL" &&
-      this.map[y][x].owner !== 0 &&
-      this.map[y][x].owner !== 1
-    );
+    return this.isCellInBounds(x, y) && this.getCell(x, y).isFree();
+  }
+
+  getCell(x, y) {
+    return this.map[y][x];
   }
 
   isCellProtein(x, y) {
@@ -143,9 +163,39 @@ export default class State {
   }
 
   createEmptyMap(width, height) {
-    return Array.from({ length: height }, () =>
-      Array.from({ length: width }, () => ({ type: null }))
-    );
+    return Array.from({ length: height }, () => Array.from({ length: width }, () => new Cell()));
+  }
+
+  harvestedProteins(player = 1) {
+    const harvested = { A: 0, B: 0, C: 0, D: 0 };
+    const harvesters = this.players[player]?.filter((organ) => organ.type === "HARVESTER") || [];
+
+    //IO.log("HV: ", harvesters);
+
+    for (const organ of harvesters) {
+      const target = organ.getTarget();
+      if (target) {
+        const type = this.getCell(target.x, target.y).type;
+        harvested[type]++;
+      }
+    }
+    IO.log("HV: ", harvested);
+    return harvested;
+  }
+
+  getOrganTarget(organ) {
+    const directions = {
+      E: [1, 0],
+      W: [-1, 0],
+      N: [0, -1],
+      S: [0, 1],
+    };
+
+    const [dx, dy] = directions[organ.direction] || [0, 0];
+    let nx = organ.x + dx;
+    let ny = organ.y + dy;
+
+    return this.map[ny][nx];
   }
 
   /**
