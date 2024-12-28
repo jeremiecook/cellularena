@@ -22,6 +22,8 @@ export default class State {
     this.requiredActions = 0;
     this.children = [];
     this.descendance = [];
+    this.harvestedCells = [];
+    this.controlledCells = [];
   }
 
   setDimensions(width, height) {
@@ -41,23 +43,6 @@ export default class State {
     if (cell.isOrgan()) {
       (this.players[owner] ??= []).push(cell);
       (this.children[parent] ??= []).push(id);
-
-      // Cellules controlées par un joueur
-      if (type === "TENTACLE") {
-        const directions = {
-          E: [1, 0],
-          W: [-1, 0],
-          N: [0, -1],
-          S: [0, 1],
-        };
-        const nx = x + directions[direction][0];
-        const ny = y + directions[direction][1];
-
-        if (this.isCellInBounds(nx, ny)) {
-          this.map[ny][nx] = new Cell({ x: nx, y: ny, controlledBy: owner });
-        }
-      }
-
       return;
     }
 
@@ -67,28 +52,83 @@ export default class State {
     }
   }
 
+  calculations() {
+    for (let x = 0; x < this.width; x++) {
+      for (let y = 0; y < this.height; y++) {
+        const cell = this.getCell(x, y);
+
+        this.setCellTarget(cell);
+
+        if (cell.type !== TYPE.ORGAN.TENTACLE && cell.type !== TYPE.ORGAN.HARVESTER) continue;
+
+        // Détermine les cellules cibles
+
+        const target = this.setCellTarget(cell);
+
+        // Cellules contrôlées par une tentacule
+        if (cell.type === TYPE.ORGAN.TENTACLE) {
+          target?.addController(cell);
+        }
+
+        // Cellules farmées par un harvester
+        if (cell.type === TYPE.ORGAN.HARVESTER) {
+          target?.addHarvester(cell);
+        }
+      }
+    }
+  }
+
+  setCellTarget(cell) {
+    const { x, y } = this.getTargetPosition(cell) || [null, null];
+    if (x === null || y === null || !this.isPositionInBounds(x, y)) {
+      return;
+    }
+    cell.target = this.getCell(x, y);
+    return cell.target;
+  }
+
+  getTargetPosition({ x, y, direction } = {}) {
+    const directions = {
+      E: [1, 0],
+      W: [-1, 0],
+      N: [0, -1],
+      S: [0, 1],
+    };
+
+    if (!directions[direction]) {
+      return null;
+    }
+
+    const [dx, dy] = directions[direction];
+    return {
+      x: x + dx,
+      y: y + dy,
+    };
+  }
+
   setStock(player, a, b, c, d) {
     this.stocks[player] = new Stock(a, b, c, d);
   }
 
-  isCellInBounds(x, y) {
+  isPositionInBounds(x, y) {
     return y >= 0 && y < this.height && x >= 0 && x < this.width;
   }
 
   isCellFree(x, y) {
-    return this.isCellInBounds(x, y) && this.getCell(x, y).isFree();
+    return this.isPositionInBounds(x, y) && this.getCell(x, y).isFree();
   }
 
   getCell(x, y) {
-    return this.map[y][x];
+    return this.map[y]?.[x] || null;
   }
 
   isCellProtein(x, y) {
-    return this.proteins.find((p) => p.x === x && p.y === y);
+    return this.getCell(x, y)?.isProtein();
+    //return this.proteins.find((p) => p.x === x && p.y === y);
   }
 
   isCellEnnemy(x, y) {
-    return this.isCellInBounds(x, y) && this.map[y][x] && this.map[y][x].owner === 0;
+    return this.isPositionInBounds(x, y) && this.map[y][x] && this.map[y][x].owner === 0;
   }
 
   // Getters
@@ -98,7 +138,7 @@ export default class State {
   }
 
   getType(x, y) {
-    return this.map[y][x].type;
+    return this.getCell(x, y).type;
   }
 
   getSporerRange(sporer) {
@@ -163,14 +203,15 @@ export default class State {
   }
 
   createEmptyMap(width, height) {
-    return Array.from({ length: height }, () => Array.from({ length: width }, () => new Cell()));
+    return Array.from({ length: height }, (_, y) =>
+      Array.from({ length: width }, (_, x) => new Cell({ x, y, type: TYPE.FREE }))
+    );
   }
 
   harvestedProteins(player = 1) {
     const harvested = { A: 0, B: 0, C: 0, D: 0 };
-    const harvesters = this.players[player]?.filter((organ) => organ.type === "HARVESTER") || [];
-
-    //IO.log("HV: ", harvesters);
+    const harvesters =
+      this.players[player]?.filter((organ) => organ.type === TYPE.ORGAN.HARVESTER) || [];
 
     for (const organ of harvesters) {
       const target = organ.getTarget();
@@ -179,7 +220,6 @@ export default class State {
         harvested[type]++;
       }
     }
-    IO.log("HV: ", harvested);
     return harvested;
   }
 

@@ -19,42 +19,71 @@ export default class Cell {
     this.root = root;
     this.parent = parent;
     this.direction = direction;
-    this.target = this.getTarget();
-    this.controlledBy = null;
+    this.adjacentCells = [];
+    this.childrenCells = [];
+    this.descendantCount = 0;
+    this.target = null;
+    this.controlledBy = [];
+    this.harvestedBy = [];
   }
 
   isOrgan() {
-    return TYPE.ORGANS.has(this.type);
+    return Object.values(TYPE.ORGAN).includes(this.type);
   }
 
   isProtein() {
-    return TYPE.PROTEINS.has(this.type);
+    return Object.values(TYPE.PROTEIN).includes(this.type);
   }
 
   isWall() {
-    return this.type === "WALL";
+    return this.type === TYPE.WALL;
   }
 
   isFree() {
-    return !this.isWall() && !this.isOrgan() && this.controlledBy?.owner !== 0;
+    return !this.isWall() && !this.isOrgan() && !this.isControlledBy(0);
   }
 
   getTarget() {
-    const directions = {
-      E: [1, 0],
-      W: [-1, 0],
-      N: [0, -1],
-      S: [0, 1],
-    };
+    return this.target;
+  }
 
-    if (!directions[this.direction]) {
-      return null;
-    }
+  addHarvester(cell) {
+    this.harvestedBy.push(cell);
+  }
 
-    const [dx, dy] = directions[this.direction];
-    return {
-      x: this.x + dx,
-      y: this.y + dy,
-    };
+  getHarvesters() {
+    return this.harvestedBy;
+  }
+
+  isHarvestedBy(player = 1) {
+    return this.harvestedBy.filter((cell) => cell.owner === player).length;
+  }
+
+  addController(cell) {
+    this.controlledBy.push(cell);
+  }
+
+  getControllers() {
+    return this.controlledBy;
+  }
+
+  isControlledBy(player = 1) {
+    return this.controlledBy.filter((cell) => cell.owner === player).length;
+  }
+
+  addAdjacentCell(cell) {
+    this.adjacentCells.push(cell);
+  }
+
+  getAdjacentCells() {
+    return this.adjacentCells;
+  }
+
+  getAdjacentProteins() {
+    return this.getAdjacentCells().filter((cell) => cell.isProtein());
+  }
+
+  getAdjacentFree() {
+    return this.getAdjacentCells().filter((cell) => cell.isFree());
   }
 }

@@ -1,7 +1,3 @@
-// export const MONSTER = {
-//   SPEED: 540,
-// };
-
 export const DIRECTIONS = [
   [0, 1, "S"],
   [1, 0, "E"],
@@ -10,6 +6,19 @@ export const DIRECTIONS = [
 ];
 
 export const TYPE = {
-  ORGANS: new Set(["ROOT", "BASIC", "HARVESTER", "TENTACLE", "SPORER"]),
-  PROTEINS: new Set(["A", "B", "C", "D"]),
+  FREE: "FREE",
+  WALL: "WALL",
+  ORGAN: {
+    ROOT: "ROOT",
+    BASIC: "BASIC",
+    HARVESTER: "HARVESTER",
+    TENTACLE: "TENTACLE",
+    SPORER: "SPORER",
+  },
+  PROTEIN: {
+    A: "A",
+    B: "B",
+    C: "C",
+    D: "D",
+  },
 };

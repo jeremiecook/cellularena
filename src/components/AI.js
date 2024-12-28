@@ -60,6 +60,7 @@ export default class AI {
     this.bfs = new BFS(state);
     this.state.calculateDescendance();
     this.harvestedProteins = this.state.harvestedProteins();
+    this.state.calculations();
   }
 
   /**
@@ -109,8 +110,7 @@ export default class AI {
   }
 
   harvest(organism) {
-    const moves = this.getAvailableGrow(organism);
-    const harvest = this.getBestHarvesterAction(moves);
+    const harvest = this.getBestHarvesterAction(organism);
     if (harvest) {
       const action = `GROW ${harvest.from} ${harvest.x} ${harvest.y} HARVESTER ${harvest.direction}`;
       return {
@@ -155,7 +155,12 @@ export default class AI {
     const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
 
     let moves = availableMoves
-      .map((move) => ({ ...move, score: this.bfs.simulate(move) }))
+      .map((move) => {
+        let score = this.bfs.simulate(move);
+        const harvested = this.state.getCell(move.x, move.y).isHarvestedBy(1);
+        if (harvested) score -= 3;
+        return { ...move, score };
+      })
       .sort((a, b) => b.score - a.score);
 
     if (!moves.length || moves[0].score <= 0) return false;
@@ -218,21 +223,36 @@ export default class AI {
     return orderedMoves[0];
   }
 
-  getBestHarvesterAction(availableMoves) {
+  getBestHarvesterAction(organism) {
+    // TODO:
+    // On n'écrase pas une proteine déjà harvested sauf si la cible est plus importante
+    // Plus importante : 2 d'écart entre l'actuelle et la nouvelle
+
     if (!this.stock.hasStockFor("HARVESTER")) return false;
 
+    const moves = this.getAvailableGrow(organism);
+
+    const available = organism.flatMap((organ) => {
+      return { from: organ.id, target: organ.getAdjacentFreeCells() };
+    });
+
     const harvestedProteins = this.harvestedProteins; // {A:0, B:1, C:2, D:0}
-    const proteinPriority = { B: 5, C: 5, D: 3, A: 1 };
-    let isTargetProtein = false;
 
     const harvesterMoves = [];
 
     for (let move of availableMoves) {
-      const isTargetProtein = this.state.isCellProtein(move.x, move.y);
-      let score = isTargetProtein ? 1 : 2;
       const closeProteins = this.state.getAdjacentProteins(move.x, move.y);
+
       for (let protein of closeProteins) {
-        if (this.harvestedProteins[protein.type] === 0) score += 5;
+        const harvestedByMyCount = this.state.getCell(protein.x, protein.y).isHarvestedBy(1);
+
+        if (harvestedByMyCount) {
+          continue;
+          // TODO : si la cellule cible vaut le coup, on écrase quand même
+        }
+
+        const targetType = this.state.getCell(move.x, move.y).type; // A, B, C...
+        let score = 3 - this.harvestedProteins[protein.type];
         harvesterMoves.push({ ...move, direction: protein.direction, type: protein.type, score });
       }
     }
@@ -240,23 +260,12 @@ export default class AI {
     return orderedMoves[0];
   }
 
-  getBasicMoves(moves) {
-    const basicMoves = [];
-    for (let move of moves) {
-      let score = this.bfs.simulate(move);
-      const isProtein = this.state.isCellProtein(move.x, move.y);
-      if (isProtein) score -= 3;
-      basicMoves.push({ ...move, score });
-    }
-    const orderedMoves = basicMoves.sort((a, b) => b.score - a.score);
-    return orderedMoves;
-  }
-
   getBestSporerAction(moves) {
-    IO.log("SPORER: ", moves);
     if (!this.stock.hasStockFor("SPORER")) return false;
     const sporerMoves = [];
     for (let move of moves) {
+      if (this.state.getCell(move.x, move.y).isHarvestedBy(1)) continue;
+
       for (let direction of DIRECTIONS) {
         const score = this.state.getSporerRange({
           x: move.x,
