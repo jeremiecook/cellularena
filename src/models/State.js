@@ -16,6 +16,7 @@ export default class State {
 
     this.walls = [];
     this.players = [];
+    this.organs = {};
     this.stocks = [];
     this.proteins = [];
 
@@ -31,8 +32,8 @@ export default class State {
     this.height = height;
   }
 
-  setCell(x, y, type, owner, id, direction, parent, root) {
-    const cell = new Cell({ x, y, type, owner, id, direction, parent, root });
+  setCell(x, y, type, owner, id, direction, parentId, root) {
+    const cell = new Cell({ x, y, type, owner, id, parentId, direction, root });
     this.map[y][x] = cell;
 
     if (type === "WALL") {
@@ -41,8 +42,9 @@ export default class State {
     }
 
     if (cell.isOrgan()) {
+      this.organs[id] = cell;
       (this.players[owner] ??= []).push(cell);
-      (this.children[parent] ??= []).push(id);
+      (this.children[parentId] ??= []).push(id);
       return;
     }
 
@@ -52,39 +54,81 @@ export default class State {
     }
   }
 
+  /**
+   * Pré-calcule différentes données liées aux cellules
+   * @param
+   * @returns
+   */
   calculations() {
     for (let x = 0; x < this.width; x++) {
       for (let y = 0; y < this.height; y++) {
         const cell = this.getCell(x, y);
 
-        this.setCellTarget(cell);
+        if (!cell) continue;
 
-        if (cell.type !== TYPE.ORGAN.TENTACLE && cell.type !== TYPE.ORGAN.HARVESTER) continue;
+        this.setAdjacentCells(cell);
 
-        // Détermine les cellules cibles
-
-        const target = this.setCellTarget(cell);
-
-        // Cellules contrôlées par une tentacule
-        if (cell.type === TYPE.ORGAN.TENTACLE) {
-          target?.addController(cell);
-        }
-
-        // Cellules farmées par un harvester
-        if (cell.type === TYPE.ORGAN.HARVESTER) {
-          target?.addHarvester(cell);
+        if (cell.isOrgan()) {
+          this.setCellTarget(cell);
+          this.setParentAndChildren(cell);
         }
       }
     }
   }
 
-  setCellTarget(cell) {
-    const { x, y } = this.getTargetPosition(cell) || [null, null];
-    if (x === null || y === null || !this.isPositionInBounds(x, y)) {
-      return;
+  /**
+   * Crée une relation parent / enfant dans les cellules
+   * @param {*} cell
+   * @returns
+   */
+  setParentAndChildren(cell) {
+    if (!cell.isOrgan()) return;
+
+    if (cell.parentId > 0) {
+      const parentCell = this.organs[cell.parentId];
+      cell.parent = parentCell;
+      parentCell.addChild(cell);
     }
-    cell.target = this.getCell(x, y);
-    return cell.target;
+  }
+
+  /**
+   * Identifie les cellules voisines et met à jour les données de la cellule
+   * @param {*} cell
+   * @returns
+   */
+  setAdjacentCells(cell) {
+    for (const [dx, dy, direction] of DIRECTIONS) {
+      const adjacentCell = this.getCell(cell.x + dx, cell.y + dy);
+      if (adjacentCell) cell.addAdjacentCell(adjacentCell);
+    }
+  }
+
+  /**
+   * Identifie la cellule cible d'un organe et met à jour les deux cellules
+   * @param {*} cell
+   * @returns
+   */
+  setCellTarget(cell) {
+    if (cell.type !== TYPE.ORGAN.TENTACLE && cell.type !== TYPE.ORGAN.HARVESTER) return;
+
+    const { x, y } = this.getTargetPosition(cell);
+    if (!this.isPositionInBounds(x, y)) return;
+
+    const target = this.getCell(x, y);
+
+    cell.addTarget(target);
+
+    // Cellules contrôlées par une tentacule
+    if (cell.type === TYPE.ORGAN.TENTACLE) {
+      target?.addController(cell);
+    }
+
+    // Cellules farmées par un harvester
+    if (cell.type === TYPE.ORGAN.HARVESTER) {
+      target?.addHarvester(cell);
+    }
+
+    return target;
   }
 
   getTargetPosition({ x, y, direction } = {}) {
@@ -96,7 +140,7 @@ export default class State {
     };
 
     if (!directions[direction]) {
-      return null;
+      return { x: null, y: null };
     }
 
     const [dx, dy] = directions[direction];
@@ -154,10 +198,13 @@ export default class State {
     let nx = sporer.x + dx;
     let ny = sporer.y + dy;
 
-    while (this.isCellFree(nx, ny)) {
-      reachableCells.push({ x: nx, y: ny });
+    let targetCell = this.getCell(nx, ny);
+
+    while (targetCell && targetCell.isFree()) {
+      reachableCells.push(targetCell);
       nx += dx;
       ny += dy;
+      targetCell = this.getCell(nx, ny);
     }
 
     return reachableCells;
@@ -223,55 +270,18 @@ export default class State {
     return harvested;
   }
 
-  getOrganTarget(organ) {
-    const directions = {
-      E: [1, 0],
-      W: [-1, 0],
-      N: [0, -1],
-      S: [0, 1],
-    };
+  // getOrganTarget(organ) {
+  //   const directions = {
+  //     E: [1, 0],
+  //     W: [-1, 0],
+  //     N: [0, -1],
+  //     S: [0, 1],
+  //   };
 
-    const [dx, dy] = directions[organ.direction] || [0, 0];
-    let nx = organ.x + dx;
-    let ny = organ.y + dy;
+  //   const [dx, dy] = directions[organ.direction] || [0, 0];
+  //   let nx = organ.x + dx;
+  //   let ny = organ.y + dy;
 
-    return this.map[ny][nx];
-  }
-
-  /**
-   * Calculate the total number of descendants for each cell.
-   */
-  calculateDescendance() {
-    const descendantCounts = {};
-
-    // Recursive DFS with memoization
-    const countDescendants = (id) => {
-      if (descendantCounts[id] !== undefined) {
-        return descendantCounts[id];
-      }
-
-      // Base case: if no children, return 0
-      if (!this.children[id] || this.children[id].length === 0) {
-        descendantCounts[id] = 0;
-        return 0;
-      }
-
-      // Count direct children + their descendants
-      let total = 0;
-      for (const childId of this.children[id]) {
-        total += 1 + countDescendants(childId);
-      }
-
-      descendantCounts[id] = total;
-      return total;
-    };
-
-    // Iterate over all parents in the children map
-    for (const id of Object.keys(this.children)) {
-      countDescendants(id);
-    }
-
-    this.descendance = descendantCounts;
-    return descendantCounts;
-  }
+  //   return this.map[ny][nx];
+  // }
 }
