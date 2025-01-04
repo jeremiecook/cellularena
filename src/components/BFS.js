@@ -1,5 +1,5 @@
 import { DIRECTIONS } from "../constants";
-import IO from "../utilities/IO";
+import Logger from "../utilities/Logger";
 
 export default class BFS {
   /**
@@ -8,68 +8,53 @@ export default class BFS {
   constructor(state) {
     this.state = state;
     this.players = [];
+    this.playerToReach = [];
     this.#analyzeState();
   }
 
   #analyzeState() {
-    this.players[0] = this.#evaluate(this.state.players[0]);
-    this.players[1] = this.#evaluate(this.state.players[1]);
-    this.difference = this.#calculateDifference(this.players[0], this.players[1]);
+    this.firstToReach = this.#firstToReach();
+    //this.players[0] = this.#evaluate(this.state.players[0]);
+    //this.players[1] = this.#evaluate(this.state.players[1]);
+    //this.difference = this.#calculateDifference(this.players[0], this.players[1]);
     //this.displayGrid(this.difference, "Difference");
     //console.warn(this.players[1][4][5]);
     //console.warn(this.players[0][4][5]);
   }
 
-  /**
-   * Calculate the difference grid between two players.
-   * @param {Array<Array<number>>} grid1 - The grid of the first player.
-   * @param {Array<Array<number>>} grid2 - The grid of the second player.
-   * @returns {Array<Array<number>>} The difference grid.
-   */
-  #calculateDifference(grid1, grid2) {
-    const height = grid1.length;
-    const width = grid1[0].length;
-
-    const differenceGrid = new Array(height).fill(0).map(() => new Array(width));
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const value1 = grid1[y][x];
-        const value2 = grid2[y][x];
-
-        // Handle the difference and Infinity cases directly
-        differenceGrid[y][x] =
-          value1 !== Infinity && value2 !== Infinity ? value1 - value2 : Infinity;
-      }
-    }
-
-    return differenceGrid;
-  }
-
-  #evaluate(player) {
+  #firstToReach() {
     const queue = [];
     const grid = this.createGrid(this.state.width, this.state.height);
 
-    for (const organ of player) {
-      queue.push({ x: organ.x, y: organ.y, distance: 0 });
-      grid[organ.y][organ.x] = 0;
+    const organs = this.state.organs;
+    for (const [key, organ] of Object.entries(organs)) {
+      queue.push({ x: organ.x, y: organ.y, player: organ.owner, distance: 0 });
+      grid[organ.y][organ.x] = { first: organ.owner, distance: 0 };
     }
-
+    // Perform BFS
     while (queue.length > 0) {
-      const { x, y, distance } = queue.shift();
+      const { x, y, player, distance } = queue.shift();
 
       for (const [dx, dy] of DIRECTIONS) {
         const nx = x + dx;
         const ny = y + dy;
 
-        if (this.state.isCellFree(nx, ny)) {
-          if (grid[ny][nx] > distance + 1) {
-            // Update cell if shorter distance is found
-            grid[ny][nx] = distance + 1;
+        // Skip invalid or out-of-bounds cells
+        if (!this.state.getCell(nx, ny) || !this.state.getCell(nx, ny).isFree()) {
+          continue;
+        }
 
-            // Add to queue
-            queue.push({ x: nx, y: ny, distance: distance + 1 });
-          }
+        const current = grid[ny][nx];
+
+        // Check if the cell is unvisited or can be updated with a shorter distance
+        if (current.distance > distance + 1) {
+          current.player = player; // Update the first player to reach
+          current.distance = distance + 1; // Update the distance
+
+          queue.push({ x: nx, y: ny, player, distance: distance + 1 });
+        } else if (current.distance === distance + 1 && current.player !== player) {
+          current.player = -1;
+          current.distance = distance + 1;
         }
       }
     }
@@ -84,19 +69,46 @@ export default class BFS {
    * @returns {number} The number of cells won by this move.
    */
   simulate(cell) {
-    const player = [...this.state.players[1], cell];
+    const grid = this.copyGrid(this.firstToReach); // Reference to the original grid
+    const queue = [{ x: cell.x, y: cell.y, distance: 0 }];
+    let advantageGained = 0;
 
-    const newGrid = this.#evaluate(player);
+    let log = false;
+    //if (cell.x === 5 && cell.y === 7) log = true;
 
-    // Calcule la somme des distances dans chaque grille
-    const sumGrid = (grid) =>
-      grid.flat().reduce((sum, cell) => sum + (cell !== Infinity ? cell : 0), 0);
+    while (queue.length > 0) {
+      const { x, y, distance } = queue.shift();
+      const adjacentCells = this.state.getCell(x, y).getAdjacentCells();
 
-    // Retourne la différence entre les deux sommes
-    //IO.log("Player: ", sumGrid(newGrid), sumGrid(this.players[1]));
-    //return sumGrid(this.players[0]) - sumGrid(newGrid);
-    //this.displayGrid(this.#calculateDifference(this.players[1], newGrid));
-    return sumGrid(this.players[1]) - sumGrid(newGrid);
+      //console.warn({ x, y }, adjacentCells);
+
+      for (const adjacent of adjacentCells) {
+        if (!adjacent.isFree()) continue;
+
+        const nx = adjacent.x;
+        const ny = adjacent.y;
+
+        const current = grid[ny][nx];
+        const newDistance = distance + 1;
+
+        if (log) console.warn({ nx, ny }, newDistance, current);
+        // Check if player1 would take control of this cell
+        if (newDistance < current.distance) {
+          queue.push({ x: nx, y: ny, distance: newDistance });
+          current.distance = newDistance;
+          if (current.player !== 1) {
+            advantageGained++;
+            current.player = 1;
+          }
+        }
+
+        if (newDistance === current.distance && current.player !== 1) {
+          advantageGained++;
+        }
+      }
+    }
+    if (log) console.warn(cell.x, cell.y, advantageGained);
+    return advantageGained;
   }
 
   /**
@@ -106,7 +118,9 @@ export default class BFS {
    * @returns {Array<Array<{firstPlayer: number|null, distance: number}>>} The initialized grid.
    */
   createGrid(width, height) {
-    return Array.from({ length: height }, () => Array.from({ length: width }, () => Infinity));
+    return Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => ({ player: null, distance: Infinity }))
+    );
   }
 
   /**
@@ -121,12 +135,13 @@ export default class BFS {
   displayGrid(grid, message = "") {
     const result = grid
       .map(
-        (row) => row.map((cell) => (Math.abs(cell) > 9 ? "+" : Math.abs(cell))).join("") // Combine the row into a string
+        (row) =>
+          row.map((cell) => (cell.player !== null && cell.player >= 0 ? cell.player : "X")).join("") // Combine the row into a string
       )
       .join("\n"); // Combine all rows with line breaks
 
-    IO.log(message);
-    IO.log(result);
-    IO.log("--");
+    Logger.log(message);
+    Logger.log(result);
+    Logger.log("--");
   }
 }

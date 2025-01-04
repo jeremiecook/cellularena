@@ -124,7 +124,7 @@ export default class State {
     }
 
     // Cellules farmées par un harvester
-    if (cell.type === TYPE.ORGAN.HARVESTER) {
+    if (target.isProtein() && cell.type === TYPE.ORGAN.HARVESTER) {
       target?.addHarvester(cell);
     }
 
@@ -255,7 +255,9 @@ export default class State {
     );
   }
 
-  harvestedProteins(player = 1) {
+  getHarvestedProteins(player = 1) {
+    if (this.harvestedProteins) return harvestedProteins;
+
     const harvested = { A: 0, B: 0, C: 0, D: 0 };
     const harvesters =
       this.players[player]?.filter((organ) => organ.type === TYPE.ORGAN.HARVESTER) || [];
@@ -267,6 +269,7 @@ export default class State {
         harvested[type]++;
       }
     }
+    this.harvestedProtein = harvested;
     return harvested;
   }
 

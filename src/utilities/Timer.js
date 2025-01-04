@@ -1,4 +1,4 @@
-import IO from "./IO";
+import Logger from "./Logger";
 
 export default class Timer {
   constructor() {
@@ -8,13 +8,13 @@ export default class Timer {
   // Méthode pour démarrer le compteur
   start() {
     this.startTime = Date.now();
-    IO.log("Timer started.");
+    Logger.log("Timer started.");
   }
 
   // Méthode pour arrêter le compteur
   stop() {
     if (this.timerId === null) {
-      IO.log("Timer is not running.");
+      Logger.log("Timer is not running.");
       return;
     }
 
@@ -22,12 +22,12 @@ export default class Timer {
     this.timerId = null;
 
     const totalElapsed = Date.now() - this.startTime;
-    IO.log(`Timer stopped. Temps total écoulé : ${totalElapsed} ms`);
+    Logger.log(`Timer stopped. Temps total écoulé : ${totalElapsed} ms`);
   }
 
   top(message = "") {
     const elapsed = Date.now() - this.startTime;
-    IO.log(message, `Temps écoulé : ${elapsed} ms`);
+    Logger.log(`- Temps écoulé : ${elapsed} ms`, message);
   }
 
   // Méthode pour réinitialiser le compteur
@@ -36,6 +36,6 @@ export default class Timer {
       this.stop();
     }
     this.startTime = null;
-    IO.log("Timer reset.");
+    Logger.log("Timer reset.");
   }
 }

@@ -30,6 +30,19 @@ export default class Stock {
   }
 
   /**
+   * Checks if there is sufficient stock for all the given types.
+   * @param {string[]} types - The types of resources to check.
+   * @returns {boolean} True if stock is sufficient for all types, false otherwise.
+   */
+  hasStockForAll(types) {
+    if (!Array.isArray(types)) {
+      throw new Error("Invalid input: expected an array of strings");
+    }
+
+    return types.every((type) => this.hasStockFor(type));
+  }
+
+  /**
    * Spends the required resources for the given type.
    * @param {string} type - The type of resource to spend.
    */

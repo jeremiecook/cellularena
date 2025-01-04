@@ -33,10 +33,6 @@ export default class IO {
     console.log(`SPORE ${from} ${x} ${y}`);
   }
 
-  static log(...args) {
-    console.error(...args);
-  }
-
   #entities() {
     const entityCount = parseInt(readline());
     for (let i = 0; i < entityCount; i++) {
