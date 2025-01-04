@@ -30,33 +30,19 @@ export default class AI {
     const occupiedCells = new Set();
 
     const actions = [
-      { name: "Defend", handler: this.defend.bind(this) },
-      { name: "Root", handler: this.root.bind(this) },
-
-      { name: "Harvest", handler: this.harvest.bind(this) },
-      { name: "Sporer", handler: this.sporer.bind(this) },
-      { name: "Expand", handler: this.expand.bind(this) },
+      { name: "Close Defense", handler: (organism) => this.getBestCloseDefense(organism) },
+      { name: "2 Cells Defense", handler: (organism) => this.getBestDefense(organism) },
+      { name: "Root", handler: (organism) => this.getBestRootAction(organism) },
+      { name: "Harvest", handler: (organism) => this.getBestHarvesterAction(organism) },
+      { name: "Sporer", handler: (organism) => this.getBestSporerAction(organism) },
+      { name: "Expand", handler: (organism) => this.expand(organism) },
+      { name: "Consolidate", handler: (organism) => this.consolidate(organism, usedOrganisms) },
+      { name: "Wait", handler: (organism) => this.justWait(organism) },
     ];
 
     actions.forEach((action) => {
       this.#executeAction(organisms, action, usedOrganisms, occupiedCells);
     });
-
-    // Consolidation à la fin
-    if (usedOrganisms.size === 0) {
-      Logger.log("CONSOLIDATE");
-      this.#executeAction(
-        organisms,
-        { name: "Consolidate", handler: this.consolidate.bind(this) },
-        usedOrganisms,
-        occupiedCells
-      );
-    }
-
-    // WAIT pour les actions non selectionnées
-    for (let i = 0; i < organisms.length - usedOrganisms.size; i++) {
-      console.log("WAIT");
-    }
   }
 
   /**
@@ -89,49 +75,22 @@ export default class AI {
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score);
 
-    // Exécuter les actions1
+    // Exécuter les actions
     Logger.log(action.name);
-    for (const { action: actionDetail, organism, type } of organismsActions) {
+    for (const { command, organism, type } of organismsActions) {
       if (type && this.stock.hasStockFor(type)) {
-        Logger.log("From: ", organism[0].id, " ", actionDetail);
+        Logger.log("From: ", organism[0].id, " ", command);
         this.stock.spend(type);
         usedOrganisms.add(organism[0].id);
+        console.log(command);
         //occupiedCells.add(`${x},${y}`);
-        console.log(actionDetail);
+      }
+
+      if (command === "WAIT") {
+        console.log(command);
       }
     }
     this.timer.top();
-  }
-
-  defend(organism) {
-    const defend = this.getBestDefenseAction(organism);
-    //Logger.log("DEFEND", defend);
-    if (defend) {
-      const action = `GROW ${defend.from} ${defend.x} ${defend.y} ${defend.type} ${defend.direction}`;
-      return { action, score: defend.score, type: defend.type };
-    }
-  }
-
-  root(organism) {
-    //const moves = this.getAvailableGrowOld(organism);
-    const root = this.getBestRootAction(organism);
-    if (root) {
-      this.sporersDone.push(root.from);
-      const action = `SPORE ${root.from} ${root.x} ${root.y}`;
-      return { action, score: root.score, type: "ROOT" };
-    }
-  }
-
-  harvest(organism) {
-    const harvest = this.getBestHarvesterAction(organism);
-    if (harvest) {
-      const action = `GROW ${harvest.from} ${harvest.x} ${harvest.y} HARVESTER ${harvest.direction}`;
-      return {
-        action,
-        score: harvest.score,
-        type: "HARVESTER",
-      };
-    }
   }
 
   expand(organism, consolidate = false) {
@@ -139,37 +98,31 @@ export default class AI {
     const expand = this.getBestExpandAction(moves, consolidate);
     if (expand) {
       return {
-        action: `GROW ${expand.from} ${expand.x} ${expand.y} ${expand.type} ${expand.direction}`,
+        command: `GROW ${expand.from} ${expand.x} ${expand.y} ${expand.type} ${expand.direction}`,
         score: expand.score + 1,
         type: expand.type,
       };
     }
   }
 
-  consolidate(organism) {
+  consolidate(organism, usedOrganisms) {
+    if (usedOrganisms.size >= 0) return;
     const moves = this.getAvailableGrowOld(organism);
     const consolidate = this.getBestExpandAction(moves, true);
     if (consolidate) {
       return {
-        action: `GROW ${consolidate.from} ${consolidate.x} ${consolidate.y} ${consolidate.type} ${consolidate.direction}`,
+        command: `GROW ${consolidate.from} ${consolidate.x} ${consolidate.y} ${consolidate.type} ${consolidate.direction}`,
         score: consolidate.score + 1,
         type: consolidate.type,
       };
     }
   }
 
-  sporer(organism) {
-    const sporer = this.getBestSporerAction(organism);
-    if (!this.organismHasSporer(organism) && sporer) {
-      const action = `GROW ${sporer.from} ${sporer.x} ${sporer.y} SPORER ${sporer.direction}`;
-      return { action, score: sporer.score, type: "SPORER" };
-    }
-  }
-
-  wait() {
+  justWait() {
     return {
-      action: `WAIT`,
+      command: `WAIT`,
       score: 1,
+      type: "WAIT", // TODO rendre ça plus clean (ligne inutile)
     };
   }
 
@@ -195,7 +148,7 @@ export default class AI {
     return moves[0];
   }
 
-  getBestDefenseAction(organism) {
+  getBestCloseDefense(organism) {
     const ennemyMoves = [];
 
     // Meilleur type d'organe pour se défendre
@@ -240,6 +193,67 @@ export default class AI {
 
     if (ennemyMoves.length) {
       const ordered = ennemyMoves.sort((a, b) => b.score - a.score);
+      const best = ordered[0];
+      if (best) {
+        const command = `GROW ${best.from} ${best.x} ${best.y} ${best.type} ${best.direction}`;
+        return { command, score: best.score, type: best.type };
+      }
+      return ordered[0];
+    }
+
+    return false;
+  }
+
+  getBestDefense(organism) {
+    const ennemyMoves = [];
+
+    // Meilleur type d'organe pour se défendre
+    const defenseType = this.stock.hasStockFor("TENTACLE")
+      ? "TENTACLE"
+      : this.getBestTypeConsideringStock();
+
+    // Ennemis proches
+    const availableMoves = this.getAvailableGrow(organism);
+    for (let move of availableMoves) {
+      let score = 0;
+      let direction = null;
+
+      const adjacentCells = move.target.getAdjacentCells().filter((cell) => !cell.isWall());
+      for (let cell of adjacentCells) {
+        const adjacentEnemies = cell.getAdjacentEnnemies();
+        if (adjacentEnemies.length > 0) {
+          score = Math.max(score, 1 + move.target.getDescendantsCount());
+          //if (cell.isControlledBy(1)) score -= 1;
+          direction = this.getDirection(move.target, cell);
+        }
+      }
+
+      const ennemies = move.target.getAdjacentEnnemies();
+      for (let ennemy of ennemies) {
+        score = 1000 + move.target.getDescendantsCount();
+        direction = this.getDirection(move.target, ennemy);
+      }
+
+      // TODO : prioriser mes cellules importantes
+      if (score > 0) {
+        ennemyMoves.push({
+          x: move.target.x,
+          y: move.target.y,
+          from: move.from,
+          type: defenseType,
+          direction: direction,
+          score: score,
+        });
+      }
+    }
+
+    if (ennemyMoves.length) {
+      const ordered = ennemyMoves.sort((a, b) => b.score - a.score);
+      const best = ordered[0];
+      if (best) {
+        const command = `GROW ${best.from} ${best.x} ${best.y} ${best.type} ${best.direction}`;
+        return { command, score: best.score, type: best.type };
+      }
       return ordered[0];
     }
 
@@ -266,7 +280,13 @@ export default class AI {
       score: this.bfs.simulate(move), // Add the score to each move
     }));
     const orderedMoves = scoredMoves.sort((a, b) => b.score - a.score);
-    return orderedMoves[0];
+    const bestMove = orderedMoves[0];
+
+    if (bestMove) {
+      this.sporersDone.push(bestMove.from);
+      const command = `SPORE ${bestMove.from} ${bestMove.x} ${bestMove.y}`;
+      return { command, score: bestMove.score, type: "ROOT" };
+    }
   }
 
   getBestHarvesterAction(organism) {
@@ -287,7 +307,7 @@ export default class AI {
         if (move.target.isHarvestedBy(1)) continue;
         // TODO : si la cellule cible vaut le coup, on écrase quand même
 
-        let score = 2 - harvestedProteins[protein.type];
+        let score = 1 - harvestedProteins[protein.type];
         harvesterMoves.push({
           x: move.target.x,
           y: move.target.y,
@@ -298,7 +318,16 @@ export default class AI {
       }
     }
 
-    return harvesterMoves.sort((a, b) => b.score - a.score)[0] || null;
+    const best = harvesterMoves.sort((a, b) => b.score - a.score)[0] || null;
+
+    if (best) {
+      const command = `GROW ${best.from} ${best.x} ${best.y} HARVESTER ${best.direction}`;
+      return {
+        command,
+        score: best.score,
+        type: "HARVESTER",
+      };
+    }
   }
 
   getDirection(from, to) {
@@ -329,6 +358,8 @@ export default class AI {
 
   getBestSporerAction(organism) {
     if (!this.stock.hasStockForAll(["SPORER", "ROOT", "HARVESTER"])) return false;
+    if (this.organismHasSporer(organism)) return false;
+
     const sporerMoves = [];
     const moves = this.getAvailableGrowOld(organism);
     for (let move of moves) {
@@ -342,11 +373,16 @@ export default class AI {
         });
 
         const score = sporerRangeCells.reduce((sum, cell) => sum + this.bfs.simulate(cell), 0);
-        if (score > 5) sporerMoves.push({ ...move, direction: direction[2], score });
+        if (score > 8) sporerMoves.push({ ...move, direction: direction[2], score });
       }
     }
     const orderedMoves = sporerMoves.sort((a, b) => b.score - a.score);
-    return orderedMoves[0];
+    const best = orderedMoves[0];
+
+    if (best) {
+      const command = `GROW ${best.from} ${best.x} ${best.y} SPORER ${best.direction}`;
+      return { command, score: best.score, type: "SPORER" };
+    }
   }
 
   getAvailableGrowOld(organism) {
