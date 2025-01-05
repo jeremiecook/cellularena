@@ -62,7 +62,7 @@ export default class BFS {
     return grid;
   }
 
-  threats(cells = [], blocks = [], depth = 5, player = 1) {
+  threats(cells = [], blocks = [], depth = 4, player = 1) {
     const opponentId = (player + 1) % 2;
     const opponentCells = this.state.players[opponentId];
     const targets = cells.map((cell) => ({ from: cell.from, ...cell.target }));

@@ -16,6 +16,22 @@ export default class AI {
   }
 
   /**
+   * Initialize state and perform calculations
+   * @param {State} state - Current game state
+   */
+  #initializeState(state) {
+    this.state = state;
+    this.timer = new Timer();
+    this.availableGrow = [];
+    this.reservedCells = new Set();
+    this.stock = this.state.getStock(1);
+
+    this.bfs = new BFS(state);
+    this.state.calculations();
+    this.harvestedProteins = this.state.harvestedProteins;
+  }
+
+  /**
    * Find next move
    * @param {State} state - Current game state
    */
@@ -35,38 +51,22 @@ export default class AI {
       { name: "Harvest proteins", handler: (organism) => this.harvestCloseProteins(organism) },
       { name: "New Sporer", handler: (organism) => this.growNewSporer(organism) },
       { name: "Find Missing Proteins", handler: (organism) => this.findMissingProtein(organism) },
-      { name: "Expand", handler: (organism) => this.expand(organism) },
       { name: "Cherry Pick", handler: (organism) => this.cherryPick(organism) },
+      { name: "Expand", handler: (organism) => this.expand(organism) },
       { name: "Consolidate", handler: (organism) => this.consolidate(organism, usedOrganisms) },
       { name: "Finish", handler: (organism) => this.finish(organism, usedOrganisms) },
       { name: "Wait", handler: (organism) => this.justWait(organism) },
     ];
 
     actions.forEach((action) => {
-      this.#executeAction(organisms, action, usedOrganisms, occupiedCells);
+      this.#executeAction(organisms, action, usedOrganisms);
     });
-  }
-
-  /**
-   * Initialize state and perform calculations
-   * @param {State} state - Current game state
-   */
-  #initializeState(state) {
-    this.state = state;
-    this.timer = new Timer();
-    this.availableGrow = [];
-    this.reservedCells = new Set();
-    this.stock = this.state.getStock(1);
-
-    this.bfs = new BFS(state);
-    this.state.calculations();
-    this.harvestedProteins = this.state.harvestedProteins;
   }
 
   /**
    * Execute actions for organisms based on a handler
    */
-  #executeAction(organisms, action, usedOrganisms, occupiedCells) {
+  #executeAction(organisms, action, usedOrganisms) {
     Logger.log(action.name);
 
     // Identifier la meilleure action pour chaque organisme
@@ -76,17 +76,18 @@ export default class AI {
         organism,
         ...action.handler(organism),
       }))
-      .filter(({ score }) => score > 0)
+      .filter(({ score, x, y }) => score > 0)
       .sort((a, b) => b.score - a.score);
 
     // Exécuter les actions
 
-    for (const { command, organism, type } of organismsActions) {
-      if (type && this.stock.hasStockFor(type)) {
-        Logger.log("From: ", organism[0].id, " ", command);
+    for (const { command, organism, type, x, y } of organismsActions) {
+      if (type && this.stock.hasStockFor(type) && !this.reservedCells.has(`${x},${y}`)) {
+        Logger.log("- From:", organism[0].id, " ", command);
         this.stock.spend(type);
         console.log(command);
         usedOrganisms.add(organism[0].id);
+        this.reserveCell(x, y);
       }
 
       if (command === "WAIT") {
@@ -125,7 +126,7 @@ export default class AI {
 
     const best = ennemyMoves.sort((a, b) => b.score - a.score)[0];
     const command = `GROW ${best.from} ${best.x} ${best.y} ${best.type} ${best.direction}`;
-    return { command, score: best.score, type: best.type };
+    return { command, score: best.score, type: best.type, x: best.x, y: best.y };
   }
 
   getBest2CellsDefense(organism) {
@@ -157,7 +158,7 @@ export default class AI {
 
     const best = defenseMoves.sort((a, b) => b.score - a.score)[0];
     const command = `GROW ${best.from} ${best.x} ${best.y} TENTACLE ${best.direction}`;
-    return { command, score: best.score, type: best.type };
+    return { command, score: best.score, type: best.type, x: best.x, y: best.y };
   }
 
   secure(organism) {
@@ -196,7 +197,7 @@ export default class AI {
 
     const best = bestSecureMoves[0];
     const command = `GROW ${best.from} ${best.x} ${best.y} TENTACLE ${best.direction}`;
-    return { command, score: best.score, type: best.type };
+    return { command, score: best.score, type: best.type, x: best.x, y: best.y };
 
     return false;
   }
@@ -238,6 +239,8 @@ export default class AI {
         command,
         score: best.score,
         type: "HARVESTER",
+        x: best.x,
+        y: best.y,
       };
     }
   }
@@ -276,7 +279,7 @@ export default class AI {
 
     if (best) {
       const command = `GROW ${best.from} ${best.x} ${best.y} SPORER ${best.direction}`;
-      return { command, score: best.score, type: "SPORER" };
+      return { command, score: best.score, type: "SPORER", x: best.x, y: best.y };
     }
   }
 
@@ -301,12 +304,12 @@ export default class AI {
       score: this.bfs.simulate(move), // Add the score to each move
     }));
     const orderedMoves = scoredMoves.sort((a, b) => b.score - a.score);
-    const bestMove = orderedMoves[0];
+    const best = orderedMoves[0];
 
-    if (bestMove) {
-      this.sporersDone.push(bestMove.from);
-      const command = `SPORE ${bestMove.from} ${bestMove.x} ${bestMove.y}`;
-      return { command, score: bestMove.score, type: "ROOT" };
+    if (best) {
+      this.sporersDone.push(best.from);
+      const command = `SPORE ${best.from} ${best.x} ${best.y}`;
+      return { command, score: best.score, type: "ROOT", x: best.x, y: best.y };
     }
   }
 
@@ -330,7 +333,7 @@ export default class AI {
     const best = foundProteins[0];
     //Logger.log("Proteins", foundProteins, best);
     const command = `GROW ${best.firstCellId} ${best.firstMove.x} ${best.firstMove.y} ${type} S`;
-    return { command, score: best.distance, type: type };
+    return { command, score: best.distance, type: type, x: best.x, y: best.y };
   }
 
   // Calculate best move for each action
@@ -352,7 +355,7 @@ export default class AI {
 
     if (best) {
       const command = `GROW ${best.from} ${best.target.x} ${best.target.y} ${type} S`;
-      return { command, score: 1, type: type };
+      return { command, score: 1, type: type, x: best.target.x, y: best.target.y };
     }
   }
 
@@ -392,6 +395,8 @@ export default class AI {
         command: `GROW ${best.from} ${best.x} ${best.y} ${type} ${best.direction}`,
         score: baseScore + best.score,
         type: type,
+        x: best.x,
+        y: best.y,
       };
     }
   }
@@ -414,12 +419,15 @@ export default class AI {
     //if (this.availableGrow[organismId]) return this.availableGrow[organismId];
 
     return organism.flatMap((organ) => {
-      return organ.getAdjacentFreeCells().map((cell) => ({
-        from: organ.id,
-        organ: organ,
-        target: cell,
-        direction: this.getDirection(organ, cell),
-      }));
+      return organ
+        .getAdjacentFreeCells()
+        .filter((cell) => !this.reservedCells.has(`${cell.x},${cell.y}`))
+        .map((cell) => ({
+          from: organ.id,
+          organ: organ,
+          target: cell,
+          direction: this.getDirection(organ, cell),
+        }));
     });
   }
 

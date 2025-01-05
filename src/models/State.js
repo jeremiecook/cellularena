@@ -277,6 +277,12 @@ export default class State {
     return harvested;
   }
 
+  isHarvestingProtein(type, player = 1) {
+    const harvested = this.getHarvestedProteins(player);
+
+    return harvested[type] > 0;
+  }
+
   // getOrganTarget(organ) {
   //   const directions = {
   //     E: [1, 0],
