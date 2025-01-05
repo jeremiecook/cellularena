@@ -9,6 +9,7 @@ export default class BFS {
     this.state = state;
     this.players = [];
     this.playerToReach = [];
+    this.firstToReach = null;
     this.#analyzeState();
   }
 
@@ -18,8 +19,6 @@ export default class BFS {
     //this.players[1] = this.#evaluate(this.state.players[1]);
     //this.difference = this.#calculateDifference(this.players[0], this.players[1]);
     //this.displayGrid(this.difference, "Difference");
-    //console.warn(this.players[1][4][5]);
-    //console.warn(this.players[0][4][5]);
   }
 
   #firstToReach() {
@@ -50,6 +49,7 @@ export default class BFS {
         if (current.distance > distance + 1) {
           current.player = player; // Update the first player to reach
           current.distance = distance + 1; // Update the distance
+          current.from = { x, y };
 
           queue.push({ x: nx, y: ny, player, distance: distance + 1 });
         } else if (current.distance === distance + 1 && current.player !== player) {
@@ -60,6 +60,11 @@ export default class BFS {
     }
 
     return grid;
+  }
+
+  getDistance({ x, y } = {}, player = 1) {
+    const target = this.firstToReach[y][x];
+    return target.player === player ? target.distance : Infinity;
   }
 
   /**
@@ -73,14 +78,11 @@ export default class BFS {
     const queue = [{ x: cell.x, y: cell.y, distance: 0 }];
     let advantageGained = 0;
 
-    let log = false;
     //if (cell.x === 5 && cell.y === 7) log = true;
 
     while (queue.length > 0) {
       const { x, y, distance } = queue.shift();
       const adjacentCells = this.state.getCell(x, y).getAdjacentCells();
-
-      //console.warn({ x, y }, adjacentCells);
 
       for (const adjacent of adjacentCells) {
         if (!adjacent.isFree()) continue;
@@ -91,7 +93,6 @@ export default class BFS {
         const current = grid[ny][nx];
         const newDistance = distance + 1;
 
-        if (log) console.warn({ nx, ny }, newDistance, current);
         // Check if player1 would take control of this cell
         if (newDistance < current.distance) {
           queue.push({ x: nx, y: ny, distance: newDistance });
@@ -107,7 +108,7 @@ export default class BFS {
         }
       }
     }
-    if (log) console.warn(cell.x, cell.y, advantageGained);
+
     return advantageGained;
   }
 

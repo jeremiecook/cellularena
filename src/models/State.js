@@ -181,6 +181,10 @@ export default class State {
     return this.stocks[player];
   }
 
+  getProteins() {
+    return this.proteins;
+  }
+
   getType(x, y) {
     return this.getCell(x, y).type;
   }

@@ -1,12 +1,12 @@
 export default class Stock {
-  constructor(a = 0, b = 0, c = 0, d = 0) {
-    this.stock = { a, b, c, d };
+  constructor(A = 0, B = 0, C = 0, D = 0) {
+    this.stock = { A, B, C, D };
     this.costs = {
-      BASIC: { a: 1 },
-      HARVESTER: { c: 1, d: 1 },
-      TENTACLE: { b: 1, c: 1 },
-      SPORER: { a: 0, b: 1, c: 0, d: 1 },
-      ROOT: { a: 1, b: 1, c: 1, d: 1 },
+      BASIC: { A: 1 },
+      HARVESTER: { C: 1, D: 1 },
+      TENTACLE: { B: 1, C: 1 },
+      SPORER: { B: 1, D: 1 },
+      ROOT: { A: 1, B: 1, C: 1, D: 1 },
     };
   }
 
@@ -39,7 +39,22 @@ export default class Stock {
       throw new Error("Invalid input: expected an array of strings");
     }
 
-    return types.every((type) => this.hasStockFor(type));
+    // Calculate the cumulative resource requirements
+    const totalCosts = types.reduce((acc, type) => {
+      const cost = this.costs[type];
+      if (!cost) {
+        throw new Error(`Invalid type: ${type}`);
+      }
+      Object.entries(cost).forEach(([resource, amount]) => {
+        acc[resource] = (acc[resource] || 0) + amount;
+      });
+      return acc;
+    }, {});
+
+    // Check if the current stock can satisfy the cumulative requirements
+    return Object.entries(totalCosts).every(
+      ([resource, totalAmount]) => this.stock[resource] >= totalAmount
+    );
   }
 
   /**
