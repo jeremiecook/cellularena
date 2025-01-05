@@ -62,6 +62,60 @@ export default class BFS {
     return grid;
   }
 
+  threats(cells = [], blocks = [], depth = 5, player = 1) {
+    const opponentId = (player + 1) % 2;
+    const opponentCells = this.state.players[opponentId];
+    const targets = cells.map((cell) => ({ from: cell.from, ...cell.target }));
+    const visited = new Set();
+    const queue = [];
+    const metCells = [];
+
+    // Add opponent's cells to the queue
+    for (const cell of opponentCells) {
+      queue.push({ x: cell.x, y: cell.y, distance: 0 });
+      visited.add(`${cell.x},${cell.y}`);
+    }
+
+    // Convert blocks to a set for quick lookup
+    const blockSet = new Set(blocks.map((block) => `${block.x},${block.y}`));
+
+    // BFS traversal
+    while (queue.length > 0) {
+      const { x, y, distance } = queue.shift();
+
+      // Stop if we exceed the specified depth
+      if (distance > depth) continue;
+
+      // Check if this cell is in the `cells` list and has not been met yet
+      const indexInCells = targets.findIndex((c) => c.x === x && c.y === y);
+      if (indexInCells !== -1) {
+        metCells.push(targets[indexInCells]); // Add it to the met targets list
+        targets.splice(indexInCells, 1); // Remove from the remaining list
+      }
+
+      // Get adjacent targets for BFS
+      const adjacentCells = this.state.getCell(x, y).getAdjacentCells();
+
+      for (const adjacent of adjacentCells) {
+        const nx = adjacent.x;
+        const ny = adjacent.y;
+
+        // Skip already visited cells or blocked cells
+        if (visited.has(`${nx},${ny}`) || blockSet.has(`${nx},${ny}`)) continue;
+
+        // Only consider free cells or cells the opponent can pass through
+        if (adjacent.isFree(0)) {
+          queue.push({ x: nx, y: ny, distance: distance + 1 });
+          visited.add(`${nx},${ny}`);
+        }
+      }
+    }
+    //return { metCells, visitedCells: [...visited] }; // Return met cells and all visited cells
+    //Logger.log("Cells", cells);
+    //Logger.log([...visited]);
+    return metCells; // Return met cells and all visited cells
+  }
+
   getDistance({ x, y } = {}, player = 1) {
     const target = this.firstToReach[y][x];
     return target.player === player ? target.distance : Infinity;

@@ -22,7 +22,6 @@ export default class AI {
   next(state) {
     this.#initializeState(state);
     this.timer = new Timer();
-    //const io = new IO();
 
     const organisms = this.state.getOrganisms(1);
     const usedOrganisms = new Set();
@@ -31,6 +30,7 @@ export default class AI {
     const actions = [
       { name: "Close Defense", handler: (organism) => this.closeDefense(organism) },
       { name: "2 Cells Defense", handler: (organism) => this.getBest2CellsDefense(organism) },
+      { name: "Secure", handler: (organism) => this.secure(organism) },
       { name: "New Root", handler: (organism) => this.getBestRootAction(organism) },
       { name: "Harvest proteins", handler: (organism) => this.harvestCloseProteins(organism) },
       { name: "New Sporer", handler: (organism) => this.growNewSporer(organism) },
@@ -38,6 +38,7 @@ export default class AI {
       { name: "Expand", handler: (organism) => this.expand(organism) },
       { name: "Cherry Pick", handler: (organism) => this.cherryPick(organism) },
       { name: "Consolidate", handler: (organism) => this.consolidate(organism, usedOrganisms) },
+      { name: "Finish", handler: (organism) => this.finish(organism, usedOrganisms) },
       { name: "Wait", handler: (organism) => this.justWait(organism) },
     ];
 
@@ -128,7 +129,6 @@ export default class AI {
   }
 
   getBest2CellsDefense(organism) {
-    // Meilleur type d'organe pour se défendre
     if (!this.stock.hasStockFor("TENTACLE")) return false;
 
     // Ennemis proches
@@ -140,7 +140,7 @@ export default class AI {
     const defenseMoves = availableMoves.flatMap((move) => {
       const adjacentWithEnnemies = move.target
         .getAdjacentCells()
-        .filter((cell) => !cell.isWall() && !cell.isOrgan())
+        .filter((cell) => !cell.isWall() && !cell.isOrgan() && !cell.isControlledBy(1))
         .filter((cell) => cell.getAdjacentEnnemies().length > 0);
 
       return adjacentWithEnnemies.map((cell) => ({
@@ -158,6 +158,47 @@ export default class AI {
     const best = defenseMoves.sort((a, b) => b.score - a.score)[0];
     const command = `GROW ${best.from} ${best.x} ${best.y} TENTACLE ${best.direction}`;
     return { command, score: best.score, type: best.type };
+  }
+
+  secure(organism) {
+    if (!this.stock.hasStockFor("TENTACLE")) return false;
+    const availableMoves = this.getAvailableGrow(organism);
+    const bestSecureMoves = [];
+
+    const threats = this.bfs.threats(availableMoves);
+    if (threats.length === 0) return;
+
+    for (let cell of threats) {
+      for (let block of cell.adjacentCells) {
+        const newSituation = this.bfs.threats(availableMoves, [block]);
+
+        // Seulement pour les coups les plus évidents
+        // TODO : améliorable dans certaines situations
+        if (newSituation.length > 0) continue;
+        //if (newSituation.length >= threats.length) continue;
+
+        //Logger.log("TR", threats, newSituation);
+
+        bestSecureMoves.push({
+          x: cell.x,
+          y: cell.y,
+          from: cell.from,
+          type: "TENTACLE",
+          direction: this.getDirection(cell, block),
+          score: 5,
+        });
+      }
+    }
+
+    //Logger.log("MOVES", bestSecureMoves);
+
+    if (bestSecureMoves.length === 0) return false;
+
+    const best = bestSecureMoves[0];
+    const command = `GROW ${best.from} ${best.x} ${best.y} TENTACLE ${best.direction}`;
+    return { command, score: best.score, type: best.type };
+
+    return false;
   }
 
   harvestCloseProteins(organism) {
@@ -271,14 +312,20 @@ export default class AI {
 
   // Calculate best move for each action
   findMissingProtein(organism) {
+    if (!this.stock.hasStockFor("HARVESTER")) return false;
+
     const missingProteins = Object.entries(this.state.getHarvestedProteins())
       .filter(([key, value]) => value === 0)
       .map(([key]) => key);
 
-    const foundProteins = this.pathFindProtein(organism, missingProteins);
     const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
+    const foundProteins = this.pathFindProtein(organism, missingProteins).filter(
+      (cell) =>
+        !this.state.getCell(cell.firstMove.x, cell.firstMove.y).isHarvestedBy(1) &&
+        !this.state.getCell(cell.firstMove.x, cell.firstMove.y).isProtein()
+    );
 
-    if (!foundProteins || foundProteins <= 0) return false;
+    if (!foundProteins || foundProteins.length === 0) return false;
 
     const best = foundProteins[0];
     //Logger.log("Proteins", foundProteins, best);
@@ -317,7 +364,7 @@ export default class AI {
     };
   }
 
-  expand(organism, consolidate = false) {
+  expand(organism, consolidate = false, finish = false) {
     const availableMoves = this.getAvailableGrow(organism);
 
     const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
@@ -338,25 +385,23 @@ export default class AI {
 
     const best = expandMoves.sort((a, b) => b.score - a.score)[0] || null;
     const minScore = consolidate ? -Infinity : 0;
+    const baseScore = finish ? 100 : 1;
 
     if (best && best.score > minScore) {
       return {
         command: `GROW ${best.from} ${best.x} ${best.y} ${type} ${best.direction}`,
-        score: 1 + best.score,
+        score: baseScore + best.score,
         type: type,
       };
     }
   }
 
   consolidate(organism, usedOrganisms) {
-    // if (
-    //   usedOrganisms.size === 0 ||
-    //   (usedOrganisms.size > 0 && this.stock.hasStockForAll(["BASIC", "TENTACLE", "TENTACLE"]))
-    // ) {
-    //}
-    Logger.log("CONSOL", usedOrganisms, this.expand(organism, true));
-    if (usedOrganisms.size !== 0) return;
-    return this.expand(organism, true);
+    if (usedOrganisms.size === 0 || this.stock.isSafe()) return this.expand(organism, true);
+  }
+
+  finish(organism, usedOrganisms) {
+    if (usedOrganisms.size === 0) return this.expand(organism, true, true);
   }
 
   /**

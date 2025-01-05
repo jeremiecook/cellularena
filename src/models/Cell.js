@@ -44,8 +44,9 @@ export default class Cell {
     return this.type === TYPE.WALL;
   }
 
-  isFree() {
-    return !this.isWall() && !this.isOrgan() && !this.isControlledBy(0);
+  isFree(player = 1) {
+    const opponentId = (player + 1) % 2;
+    return !this.isWall() && !this.isOrgan() && !this.isControlledBy(opponentId);
   }
 
   addTarget(target) {

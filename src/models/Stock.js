@@ -17,6 +17,10 @@ export default class Stock {
     return this.stock;
   }
 
+  isSafe() {
+    return this.stock.A + this.stock.B + this.stock.C + this.stock.D > 16;
+  }
+
   /**
    * Checks if there is sufficient stock for the given type.
    * @param {string} type - The type of resource to check.
