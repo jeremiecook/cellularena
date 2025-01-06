@@ -171,7 +171,7 @@ export default class AI {
 
     for (let cell of threats) {
       for (let block of cell.adjacentCells) {
-        const newSituation = this.bfs.threats(availableMoves, [block]);
+        const newSituation = this.bfs.threats(availableMoves, [block], 6);
 
         // Seulement pour les coups les plus évidents
         // TODO : améliorable dans certaines situations
@@ -321,15 +321,17 @@ export default class AI {
       .filter(([key, value]) => value === 0)
       .map(([key]) => key);
 
-    const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
-    const foundProteins = this.pathFindProtein(organism, missingProteins).filter(
-      (cell) =>
-        !this.state.getCell(cell.firstMove.x, cell.firstMove.y).isHarvestedBy(1) &&
-        !this.state.getCell(cell.firstMove.x, cell.firstMove.y).isProtein()
-    );
+    Logger.log(missingProteins);
+
+    const foundProteins = this.pathFindProtein(organism, missingProteins).filter((cell) => {
+      const firstCell = this.state.getCell(cell.firstMove.x, cell.firstMove.y);
+      if (firstCell.isHarvestedBy(1)) return false;
+      if (firstCell.isProtein() && !this.state.isHarvestingProtein(firstCell.type)) return false;
+      return true;
+    });
 
     if (!foundProteins || foundProteins.length === 0) return false;
-
+    const type = this.stock.hasStockFor("BASIC") ? "BASIC" : this.getBestTypeConsideringStock();
     const best = foundProteins[0];
     //Logger.log("Proteins", foundProteins, best);
     const command = `GROW ${best.firstCellId} ${best.firstMove.x} ${best.firstMove.y} ${type} S`;
